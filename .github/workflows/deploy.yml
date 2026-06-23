@@ -46,7 +46,7 @@ jobs:
             --image $IMAGE \
             --platform managed \
             --region $REGION \
-            --set-secrets="TELEGRAM_BOT_TOKEN=telegram-bot-token:latest" \
+            --set-secrets="TELEGRAM_BOT_TOKEN=projects/$PROJECT_ID/secrets/tele-bot-token/versions/latest" \
             --min-instances=0 \
             --max-instances=1 \
             --memory=256Mi
@@ -56,6 +56,6 @@ jobs:
           SERVICE_URL=$(gcloud run services describe $SERVICE_NAME \
             --region $REGION \
             --format='value(status.url)')
-          BOT_TOKEN=$(gcloud secrets versions access latest --secret="telegram-bot-token")
+          BOT_TOKEN=$(gcloud secrets versions access latest --secret="tele-bot-token")
           curl -s "https://api.telegram.org/bot${BOT_TOKEN}/setWebhook?url=${SERVICE_URL}/webhook"
           echo "Webhook set to: ${SERVICE_URL}/webhook"
