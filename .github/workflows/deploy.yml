@@ -46,7 +46,6 @@ jobs:
             --image $IMAGE \
             --platform managed \
             --region $REGION \
-            --allow-unauthenticated \
             --set-secrets="TELEGRAM_BOT_TOKEN=telegram-bot-token:latest" \
             --min-instances=0 \
             --max-instances=1 \
