@@ -40,13 +40,15 @@ jobs:
           docker push $IMAGE
           echo "IMAGE=$IMAGE" >> $GITHUB_ENV
 
-      - name: Deploy to Cloud Run
+- name: Deploy to Cloud Run
         run: |
           gcloud run deploy $SERVICE_NAME \
             --image $IMAGE \
             --platform managed \
             --region $REGION \
             --set-secrets TELEGRAM_BOT_TOKEN=tele-bot-token:latest \
+            --set-secrets SHEETS_CREDENTIALS=sheet-credentials:latest \
+            --set-secrets SHEETS_ID=sheets-id:latest \
             --min-instances=0 \
             --max-instances=1 \
             --memory=256Mi
