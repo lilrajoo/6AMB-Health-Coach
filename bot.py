@@ -50,24 +50,24 @@ def get_sheets_client():
 
 def get_user_sheet(client, user_id):
     # Opens the master Google Sheet and navigates to the user's individual tab.
-    # Each user gets their own tab named after their Telegram user ID (e.g. "123456789").
-    # If the tab doesn't exist yet (first time user), creates it automatically
-    # with a profile header in row 1 and column headers in row 3.
-    # Row 2 is intentionally left blank as a visual spacer.
+    # If the tab doesn't exist yet, creates it with headers for all profile fields.
     spreadsheet = client.open_by_key(SHEETS_ID)
     tab_name    = str(user_id)
     try:
         return spreadsheet.worksheet(tab_name)
     except gspread.exceptions.WorksheetNotFound:
         worksheet = spreadsheet.add_worksheet(title=tab_name, rows=1000, cols=5)
-        worksheet.update("A1:B1", [["NAME", ""]])
+        # Row 1: full profile header — all fields stored across columns A-F
+        worksheet.update("A1:F1", [["NAME", "HEIGHT", "AGE", "GENDER", "WEIGHT", ""]])
+        # Row 3: data log column headers
         worksheet.update("A3:C3", [["DATE", "TYPE", "VALUE"]])
         return worksheet
 
 
-def write_profile_name(worksheet, name):
-    # Write user's name to cell B1 of their tab
-    worksheet.update("B1", [[name]])
+def write_profile(worksheet, name, height, age, gender, weight):
+    # Writes all profile fields into row 1 (A1:F1) of the user's tab.
+    # Called on registration and whenever weight/profile is updated.
+    worksheet.update("A1:F1", [[name, height, age, gender, weight, ""]])
 
 
 def append_data_row(worksheet, entry_type, value):
@@ -309,7 +309,9 @@ async def cmd_register(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Shows profile, BMI and TDEE; falls back to Sheets if not in memory
+    # Shows profile, BMI and TDEE.
+    # If data isn't in memory (e.g. after container restart), reads all
+    # profile fields from row 1 of the user's sheet tab.
     user_id = update.effective_user.id
     name   = user_name.get(user_id)
     height = user_height.get(user_id)
@@ -317,18 +319,25 @@ async def cmd_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     age    = user_age.get(user_id)
     gender = user_gender.get(user_id)
 
-    if not name or not height or not weight:
+    if not name or not height or not weight or not age or not gender:
         try:
             client    = get_sheets_client()
             worksheet = get_user_sheet(client, user_id)
             all_vals  = worksheet.get_all_values()
-            if len(all_vals) > 0 and len(all_vals[0]) > 1:
-                name = all_vals[0][1]
-                user_name[user_id] = name
+
+            # Row 1 stores: NAME | HEIGHT | AGE | GENDER | WEIGHT
+            if len(all_vals) > 0 and len(all_vals[0]) >= 5:
+                row = all_vals[0]
+                name   = row[0]; user_name[user_id]   = name
+                height = float(row[1]) if row[1] else None; user_height[user_id] = height
+                age    = int(row[2])   if row[2] else None; user_age[user_id]    = age
+                gender = row[3];       user_gender[user_id] = gender
+
+            # Most recent weight entry from data log
             weight_rows = read_data_rows(worksheet, "weight")
             if weight_rows:
-                user_weight[user_id] = weight_rows[-1][1]
                 weight = weight_rows[-1][1]
+                user_weight[user_id] = weight
         except Exception as e:
             logger.error(f"Sheet read error for /user: {e}")
 
@@ -515,7 +524,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             client    = get_sheets_client()
             worksheet = get_user_sheet(client, user_id)
-            write_profile_name(worksheet, name)
+            write_profile(worksheet, name, height, age, gender_input, weight)
             append_data_row(worksheet, "weight", weight)
         except Exception as e:
             logger.error(f"Sheet write error during registration: {e}")
@@ -546,6 +555,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 client    = get_sheets_client()
                 worksheet = get_user_sheet(client, user_id)
                 append_data_row(worksheet, "weight", w)
+                # Update weight column in profile row so /user always shows latest
+                worksheet.update("E1", [[w]])
             except Exception as e:
                 logger.error(f"Sheet write error during weight update: {e}")
 
