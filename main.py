@@ -7,8 +7,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from handlers import (cmd_start, cmd_register, cmd_user, cmd_updateweight,
                       cmd_track, cmd_resettrack, cmd_caloriegraph,
                       cmd_weightgraph, cmd_unknown, handle_message)
-from reminders import (cmd_subscribe, cmd_unsubscribe,
-                       start_scheduler_thread)
+from reminders import (cmd_subscribe, cmd_unsubscribe, start_scheduler_thread)
 from sheets import load_subscriptions_from_sheets
 
 logging.basicConfig(level=logging.INFO)
