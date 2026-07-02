@@ -15,27 +15,27 @@ All data is stored per-user in Google Sheets, meaning nothing is lost between se
 
 ## Features
 
-### 👤 Personal Profile
+ 👤 Personal Profile
 Each member registers with their rank, full name, height, weight, age and gender. The bot calculates their BMI and a personalised daily calorie target using the Mifflin-St Jeor equation, displayed every time they check their profile.
 
-### 🍽️ Calorie Tracking
+ 🍽️ Calorie Tracking
 Members log their meals throughout the day using `/track`. The bot accumulates a running daily total and compares it against their personal calorie target, giving contextual feedback — whether they're under, on track, or over for the day.
 
-### ⚖️ Weight Logging
+ ⚖️ Weight Logging
 Members update their weight using `/updateweight`. Every update is stored with a timestamp, building a historical record that feeds directly into progress graphs.
 
-### 📊 Progress Graphs
+ 📊 Progress Graphs
 Two chart commands generate and send charts directly in Telegram:
 - **`/caloriegraph`** — Bar chart showing average daily calorie intake per week for the last 4 weeks plus the current week, with a trend line
 - **`/weightgraph`** — Line chart of the last 5 weight entries with a trend line showing direction of progress
 
-### 🔔 Daily Reminders
+ 🔔 Daily Reminders
 Members can subscribe to automated reminders using `/subscribe`. Reminders fire Monday to Friday at:
 - **14:00 SGT** — After-lunch calorie check-in
 - **20:30 SGT** — After-dinner calorie check-in
 - **Fridays at 20:30 SGT** — Dinner check-in + weekly weigh-in reminder
 
-### 📋 Admin Dashboard (Google Sheets)
+ 📋 Admin Dashboard (Google Sheets)
 A Master sheet provides a real-time overview of any member's data. The admin selects a name from a dropdown and the sheet instantly updates to show:
 - Full profile summary
 - Weight progress over the last 4 months
