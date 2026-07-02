@@ -9,4 +9,4 @@ COPY bot.py .
 
 ENV PORT=8080
 
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--timeout", "60", "bot:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--timeout", "60", "main:app"]
