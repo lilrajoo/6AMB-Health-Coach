@@ -4,3 +4,4 @@ gunicorn==22.0.0
 gspread==6.1.2
 matplotlib==3.9.0
 google-auth==2.29.0
+schedule==1.2.2

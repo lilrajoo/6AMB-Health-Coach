@@ -3,7 +3,11 @@ import io
 import json
 import logging
 import asyncio
+import threading
+import schedule
+import time
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 import gspread
 import matplotlib
 matplotlib.use("Agg")  # Non-interactive backend, no display needed
@@ -18,12 +22,15 @@ from telegram.ext import Application, CommandHandler, MessageHandler, ContextTyp
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__)  # Web server that receives Telegram webhook requests
+app = Flask(__name__)
 
 # Injected by Cloud Run from GCP Secret Manager at runtime
 BOT_TOKEN        = os.environ.get("TELEGRAM_BOT_TOKEN")
-SHEETS_CREDS_RAW = os.environ.get("SHEETS_CREDENTIALS")  # Service account JSON string
-SHEETS_ID        = os.environ.get("SHEETS_ID")           # Google Sheet file ID
+SHEETS_CREDS_RAW = os.environ.get("SHEETS_CREDENTIALS")
+SHEETS_ID        = os.environ.get("SHEETS_ID")
+
+# Singapore timezone — all reminder scheduling is done in SGT (UTC+8)
+SGT = ZoneInfo("Asia/Singapore")
 
 # Per-user in-memory store — lost on container restart, permanent data lives in Sheets
 user_state    = {}  # Current conversation step
@@ -33,6 +40,10 @@ user_weight   = {}  # Weight in kg
 user_calories = {}  # Running calorie total for today
 user_age      = {}  # Age
 user_gender   = {}  # "male" or "female"
+
+# Set of user IDs who have subscribed to reminders.
+# Persisted to column F of row 1 in each user's sheet so it survives restarts.
+subscribed_users = set()
 
 
 # ── Google Sheets helpers ─────────────────────────────────────────
@@ -51,30 +62,67 @@ def get_sheets_client():
 def get_user_sheet(client, user_id):
     # Opens the master Google Sheet and navigates to the user's individual tab.
     # If the tab doesn't exist yet, creates it with headers for all profile fields.
+    # Row 1: NAME | HEIGHT | AGE | GENDER | WEIGHT | SUBSCRIBED
     spreadsheet = client.open_by_key(SHEETS_ID)
     tab_name    = str(user_id)
     try:
         return spreadsheet.worksheet(tab_name)
     except gspread.exceptions.WorksheetNotFound:
-        worksheet = spreadsheet.add_worksheet(title=tab_name, rows=1000, cols=5)
-        # Row 1: full profile header — all fields stored across columns A-F
-        worksheet.update("A1:F1", [["NAME", "HEIGHT", "AGE", "GENDER", "WEIGHT", ""]])
-        # Row 3: data log column headers
+        worksheet = spreadsheet.add_worksheet(title=tab_name, rows=1000, cols=6)
+        worksheet.update("A1:F1", [["NAME", "HEIGHT", "AGE", "GENDER", "WEIGHT", "SUBSCRIBED"]])
         worksheet.update("A3:C3", [["DATE", "TYPE", "VALUE"]])
         return worksheet
 
 
-def write_profile(worksheet, name, height, age, gender, weight):
-    # Writes all profile fields into row 1 (A1:F1) of the user's tab.
-    # Called on registration and whenever weight/profile is updated.
-    worksheet.update("A1:F1", [[name, height, age, gender, weight, ""]])
+def write_profile(worksheet, name, height, age, gender, weight, subscribed=False):
+    # Writes all profile fields into row 1 (A1:F1).
+    # Column F stores subscription status as TRUE/FALSE.
+    worksheet.update("A1:F1", [[name, height, age, gender, weight, str(subscribed)]])
+
+
+def write_subscription_status(user_id, subscribed):
+    # Updates only column F of row 1 for the given user in their sheet tab.
+    # Called whenever they subscribe or unsubscribe so the status persists
+    # across container restarts without rewriting the entire profile row.
+    try:
+        client    = get_sheets_client()
+        worksheet = get_user_sheet(client, user_id)
+        worksheet.update("F1", [[str(subscribed)]])
+    except Exception as e:
+        logger.error(f"Sheet write error for subscription status {user_id}: {e}")
+
+
+def load_subscriptions_from_sheets():
+    # Called once on startup to reload all subscribed user IDs from Google Sheets.
+    # Scans every tab in the master sheet, reads column F of row 1,
+    # and adds the user ID to subscribed_users if the value is "True".
+    # This ensures reminders continue working after a container restart.
+    if not SHEETS_CREDS_RAW or not SHEETS_ID:
+        return
+    try:
+        client      = get_sheets_client()
+        spreadsheet = client.open_by_key(SHEETS_ID)
+        sheets      = spreadsheet.worksheets()
+        for sheet in sheets:
+            # Skip the Master sheet — it's not a user tab
+            if sheet.title.lower() == "master":
+                continue
+            try:
+                row1 = sheet.row_values(1)
+                # Column F (index 5) stores the subscription status
+                if len(row1) >= 6 and row1[5].strip().lower() == "true":
+                    subscribed_users.add(int(sheet.title))
+                    logger.info(f"Reloaded subscription for user {sheet.title}")
+            except Exception:
+                continue
+    except Exception as e:
+        logger.error(f"Error loading subscriptions from sheets: {e}")
 
 
 def append_data_row(worksheet, entry_type, value):
-    # Adds a new row to the bottom of the user's data log with today's date.
-    # First reads all existing rows to find the next empty row index.
-    # Enforces a minimum of row 4 so we never accidentally overwrite
-    # the profile header (row 1), spacer (row 2), or column headers (row 3).
+    # Adds a new dated row to the data log (below row 3).
+    # Enforces a minimum of row 4 so we never overwrite the profile,
+    # spacer, or column headers in rows 1-3.
     today      = datetime.now().strftime("%Y-%m-%d")
     all_values = worksheet.get_all_values()
     next_row   = max(len(all_values) + 1, 4)
@@ -82,11 +130,9 @@ def append_data_row(worksheet, entry_type, value):
 
 
 def read_data_rows(worksheet, entry_type):
-    # Reads all rows from the data log and filters by entry type ("calories" or "weight").
-    # Skips the first 3 rows (profile + spacer + headers) using all_values[3:].
-    # Each valid row is returned as a (date_string, float_value) tuple.
-    # Rows with missing columns or non-numeric values are silently skipped
-    # to handle any accidental manual edits in the sheet.
+    # Reads all rows of a given type ("calories" or "weight"), skips rows 1-3.
+    # Returns a list of (date_string, float_value) tuples, oldest first.
+    # Malformed rows are silently skipped.
     all_values = worksheet.get_all_values()
     rows       = []
     for row in all_values[3:]:
@@ -121,9 +167,7 @@ def calc_tdee(height_cm, weight_kg, age, gender):
 
 def get_calorie_note(total, tdee):
     # Compares today's total calorie intake against the user's personal TDEE.
-    # Uses a ratio (total / tdee) instead of fixed thresholds so the feedback
-    # scales correctly regardless of the user's body size or calorie target.
-    # e.g. ratio of 0.4 means they've only eaten 40% of what they need today.
+    # Uses a ratio so feedback scales correctly regardless of body size.
     ratio = total / tdee
     if ratio < 0.5:    return f"⚠️ Very low — under 50% of your daily target ({tdee} kcal)."
     elif ratio < 0.75: return f"🟡 Below target — aim for around {tdee} kcal today."
@@ -135,17 +179,10 @@ def get_calorie_note(total, tdee):
 # ── Graph builders ────────────────────────────────────────────────
 
 def build_calorie_graph(calorie_rows):
-    # Builds a bar chart showing average daily calories per week.
-    # Works backwards from today to find the start of the current week (Monday),
-    # then generates 5 week buckets: 4 complete past weeks + the current week.
-    # Each calorie entry is sorted into its correct week bucket by date.
-    # Average calculation differs between complete and incomplete weeks:
-    #   - Complete weeks: total calories / 7 (full 7-day average)
-    #   - Current week: total calories / days elapsed so far (e.g. if Wednesday, divide by 3)
-    # Weeks with no data produce a None value which renders as an empty gap in the chart,
-    # making it visually clear there's missing data rather than showing a misleading zero bar.
-    # The trend line is calculated using numpy polyfit (linear regression) and is only
-    # drawn across weeks that actually have data — empty weeks are excluded from the fit.
+    # Bar chart: avg daily calories per week for last 4 complete weeks + current week.
+    # Complete weeks divide by 7; current (incomplete) week divides by days elapsed.
+    # Weeks with no data show as empty gaps rather than zero bars.
+    # Trend line (linear regression via numpy polyfit) only drawn across weeks with data.
     if not calorie_rows:
         return None
 
@@ -187,9 +224,7 @@ def build_calorie_graph(calorie_rows):
             ax.text(i, avg + 20, f"{avg:.0f}", ha="center", va="bottom",
                     color="white", fontsize=10, fontweight="bold")
 
-    # Linear regression trend line — only computed on weeks that have data.
-    # polyfit returns coefficients [slope, intercept] of the best-fit line.
-    # poly1d converts those into a callable function p(x) we can plot.
+    # polyfit returns [slope, intercept]; poly1d makes it a callable p(x)
     trend_x = [i for i, h in enumerate(has_data) if h]
     trend_y = [a for a, h in zip(week_avgs, has_data) if h]
     if len(trend_x) >= 2:
@@ -203,7 +238,8 @@ def build_calorie_graph(calorie_rows):
     ax.set_xticklabels(week_labels, color="white", fontsize=10)
     ax.set_ylabel("Avg Daily Calories (kcal)", color="white", fontsize=11)
     ax.set_xlabel("Week Starting", color="white", fontsize=11)
-    ax.set_title("Average Daily Calories Per Week\n(Last 4 Weeks + Current)", color="white", fontsize=13, fontweight="bold", pad=15)
+    ax.set_title("Average Daily Calories Per Week\n(Last 4 Weeks + Current)",
+                 color="white", fontsize=13, fontweight="bold", pad=15)
     ax.tick_params(colors="white")
     ax.yaxis.label.set_color("white")
     for spine in ["top", "right"]: ax.spines[spine].set_visible(False)
@@ -213,23 +249,19 @@ def build_calorie_graph(calorie_rows):
 
     buf = io.BytesIO()
     plt.savefig(buf, format="png", dpi=150, bbox_inches="tight")
-    plt.close(fig)  # Free memory — important in a long-running server
-    buf.seek(0)     # Rewind buffer to start before passing to Telegram
+    plt.close(fig)
+    buf.seek(0)
     return buf
 
 
 def build_weight_graph(weight_rows):
-    # Builds a line chart of the last 5 weight entries.
-    # Dates are parsed from strings into datetime objects so matplotlib can
-    # space the X axis correctly based on actual time gaps between entries
-    # (e.g. entries 2 weeks apart will appear further apart than daily entries).
-    # The trend line uses date2num to convert dates into numeric values that
-    # polyfit can process, then num2date converts the result back for plotting.
-    # Trend line is skipped entirely if fewer than 2 data points exist.
+    # Line chart of last 5 weight entries with trend line.
+    # Dates converted to floats for polyfit, then back to dates for plotting.
+    # Trend line skipped if fewer than 2 data points exist.
     if not weight_rows:
         return None
 
-    recent  = weight_rows[-5:]
+    recent        = weight_rows[-5:]
     dates, weights = [], []
     for date_str, w in recent:
         try:
@@ -253,10 +285,9 @@ def build_weight_graph(weight_rows):
         ax.text(d, w + 0.3, f"{w} kg", ha="center", va="bottom",
                 color="white", fontsize=10, fontweight="bold")
 
-    # Convert dates to floats for polyfit, then back to dates for plotting
     if len(dates) >= 2:
-        x_num = mdates.date2num(dates)
-        p     = np.poly1d(np.polyfit(x_num, weights, 1))
+        x_num   = mdates.date2num(dates)
+        p       = np.poly1d(np.polyfit(x_num, weights, 1))
         x_range = np.linspace(x_num[0], x_num[-1], 100)
         ax.plot(mdates.num2date(x_range), p(x_range),
                 color="#f7a76a", linewidth=2, linestyle="--", label="Trend", zorder=4)
@@ -280,6 +311,98 @@ def build_weight_graph(weight_rows):
     return buf
 
 
+# ════════════════════════════════════════════════════════════════════
+#  REMINDER SYSTEM
+#  Runs in a background thread separate from Flask.
+#  Uses the `schedule` library to fire jobs at fixed SGT times.
+#  Each job sends a Telegram message to every user in subscribed_users.
+#  asyncio.run() is used inside the thread since the thread has no
+#  existing event loop — each send gets its own short-lived loop.
+# ════════════════════════════════════════════════════════════════════
+
+async def send_reminder(user_id, message):
+    # Sends a single reminder message to one user via the Telegram Bot API.
+    # Builds a minimal application just for sending — no handlers needed.
+    try:
+        application = Application.builder().token(BOT_TOKEN).build()
+        await application.bot.send_message(
+            chat_id=user_id,
+            text=message,
+            parse_mode="Markdown"
+        )
+        logger.info(f"Reminder sent to user {user_id}")
+    except Exception as e:
+        logger.error(f"Failed to send reminder to {user_id}: {e}")
+
+
+def fire_reminder(message):
+    # Called by the scheduler — loops through all subscribed users
+    # and sends each one the reminder message.
+    # asyncio.run() creates a fresh event loop for each send since
+    # this runs in a background thread with no existing loop.
+    if not subscribed_users:
+        return
+    for user_id in list(subscribed_users):
+        asyncio.run(send_reminder(user_id, message))
+
+
+def job_midday():
+    # Mon–Fri 14:00 SGT — after lunch calorie reminder
+    # Checks the current SGT day before firing to enforce Mon–Fri only
+    now = datetime.now(SGT)
+    if now.weekday() >= 5:  # 5=Saturday, 6=Sunday
+        return
+    fire_reminder(
+        "🍽️ *Afternoon Check-in!*\n\n"
+        "Don't forget to log your lunch calories!\n"
+        "Use /track to add them to today's total. 💪"
+    )
+
+
+def job_evening():
+    # Mon–Thu 20:30 SGT — end of day calorie reminder
+    now = datetime.now(SGT)
+    if now.weekday() >= 5:
+        return
+    # Friday gets a different message with the weight update reminder
+    if now.weekday() == 4:  # 4 = Friday
+        fire_reminder(
+            "🍽️ *End of Day Check-in!*\n\n"
+            "Don't forget to log your dinner calories!\n"
+            "Use /track to add them to today's total.\n\n"
+            "⚖️ *It's Friday — time for your weekly weigh-in!*\n"
+            "Log your current weight with /updateweight to track your progress. 💪"
+        )
+    else:
+        fire_reminder(
+            "🍽️ *End of Day Check-in!*\n\n"
+            "Don't forget to log your dinner calories!\n"
+            "Use /track to add them to today's total. 💪"
+        )
+
+
+def run_scheduler():
+    # Background thread function — runs forever, checking every 60 seconds
+    # whether any scheduled jobs are due. Uses SGT time strings for scheduling.
+    # schedule library compares against local system time, so we check SGT
+    # manually inside each job function rather than relying on schedule's clock.
+    schedule.every().day.at("14:00").do(job_midday)   # 14:00 SGT daily (Mon–Fri check inside job)
+    schedule.every().day.at("20:30").do(job_evening)  # 20:30 SGT daily (Mon–Fri check inside job)
+
+    logger.info("Reminder scheduler started — 14:00 and 20:30 SGT, Mon–Fri")
+    while True:
+        schedule.run_pending()
+        time.sleep(60)  # Check every minute
+
+
+def start_scheduler_thread():
+    # Launches the scheduler in a daemon thread so it doesn't block Flask
+    # from starting and dies cleanly when the main process exits.
+    t = threading.Thread(target=run_scheduler, daemon=True)
+    t.start()
+    logger.info("Scheduler thread launched")
+
+
 # ── Command handlers ──────────────────────────────────────────────
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -294,7 +417,61 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🍽️ /track — Log caloric intake (adds to daily total)\n"
         "🔄 /resettrack — Reset today's calorie total to zero\n"
         "📊 /caloriegraph — Weekly average calorie chart\n"
-        "📉 /weightgraph — Last 5 weight entries chart",
+        "📉 /weightgraph — Last 5 weight entries chart\n"
+        "🔔 /subscribe — Subscribe to daily calorie reminders\n"
+        "🔕 /unsubscribe — Unsubscribe from reminders",
+        parse_mode="Markdown"
+    )
+
+
+async def cmd_subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Adds the user to the subscribed_users set and saves to their sheet (column F).
+    # Reminders fire Mon–Fri at 14:00 and 20:30 SGT.
+    # Fridays at 20:30 also include a weekly weight update reminder.
+    user_id = update.effective_user.id
+    if user_id in subscribed_users:
+        await update.message.reply_text(
+            "🔔 You're already subscribed to reminders!\n"
+            "Use /unsubscribe to turn them off."
+        )
+        return
+    subscribed_users.add(user_id)
+    # Persist to sheet so subscription survives container restarts
+    threading.Thread(
+        target=write_subscription_status,
+        args=(user_id, True),
+        daemon=True
+    ).start()
+    await update.message.reply_text(
+        "🔔 *Subscribed to daily reminders!*\n\n"
+        "You'll receive reminders:\n"
+        "🍽️ *14:00* — After lunch calorie check-in\n"
+        "🍽️ *20:30* — After dinner calorie check-in\n"
+        "⚖️ *Fridays at 20:30* — Weekly weigh-in reminder\n\n"
+        "Monday to Friday only. Use /unsubscribe to stop.",
+        parse_mode="Markdown"
+    )
+
+
+async def cmd_unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Removes the user from subscribed_users and updates their sheet column F.
+    user_id = update.effective_user.id
+    if user_id not in subscribed_users:
+        await update.message.reply_text(
+            "🔕 You're not currently subscribed to reminders.\n"
+            "Use /subscribe to turn them on."
+        )
+        return
+    subscribed_users.discard(user_id)
+    threading.Thread(
+        target=write_subscription_status,
+        args=(user_id, False),
+        daemon=True
+    ).start()
+    await update.message.reply_text(
+        "🔕 *Unsubscribed from reminders.*\n\n"
+        "You won't receive any more daily check-ins.\n"
+        "Use /subscribe to turn them back on anytime.",
         parse_mode="Markdown"
     )
 
@@ -310,8 +487,8 @@ async def cmd_register(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Shows profile, BMI and TDEE.
-    # If data isn't in memory (e.g. after container restart), reads all
-    # profile fields from row 1 of the user's sheet tab.
+    # Falls back to reading all profile fields from row 1 of the sheet
+    # if data isn't in memory (e.g. after a container restart).
     user_id = update.effective_user.id
     name   = user_name.get(user_id)
     height = user_height.get(user_id)
@@ -324,16 +501,12 @@ async def cmd_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             client    = get_sheets_client()
             worksheet = get_user_sheet(client, user_id)
             all_vals  = worksheet.get_all_values()
-
-            # Row 1 stores: NAME | HEIGHT | AGE | GENDER | WEIGHT
             if len(all_vals) > 0 and len(all_vals[0]) >= 5:
-                row = all_vals[0]
+                row    = all_vals[0]
                 name   = row[0]; user_name[user_id]   = name
                 height = float(row[1]) if row[1] else None; user_height[user_id] = height
                 age    = int(row[2])   if row[2] else None; user_age[user_id]    = age
                 gender = row[3];       user_gender[user_id] = gender
-
-            # Most recent weight entry from data log
             weight_rows = read_data_rows(worksheet, "weight")
             if weight_rows:
                 weight = weight_rows[-1][1]
@@ -443,7 +616,6 @@ async def cmd_weightgraph(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ── Conversation state handler ────────────────────────────────────
-# Handles all plain text messages by checking the user's current state
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -504,7 +676,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
     elif state == "awaiting_gender":
-        # Step 5: validate gender, complete registration, write to Sheets
+        # Step 5: validate gender, complete registration, write full profile to Sheets
         gender_input = text.lower().strip()
         if gender_input not in ("male", "female"):
             await update.message.reply_text(
@@ -524,7 +696,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             client    = get_sheets_client()
             worksheet = get_user_sheet(client, user_id)
-            write_profile(worksheet, name, height, age, gender_input, weight)
+            # Pass current subscription status so it isn't overwritten on re-registration
+            is_subscribed = user_id in subscribed_users
+            write_profile(worksheet, name, height, age, gender_input, weight, is_subscribed)
             append_data_row(worksheet, "weight", weight)
         except Exception as e:
             logger.error(f"Sheet write error during registration: {e}")
@@ -538,7 +712,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif state == "awaiting_update_weight":
-        # Validate new weight, update Sheets, recalculate BMI and TDEE
+        # Validate new weight, update sheet, recalculate BMI and TDEE
         try:
             w = float(text)
             if w < 10 or w > 500: raise ValueError
@@ -555,7 +729,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 client    = get_sheets_client()
                 worksheet = get_user_sheet(client, user_id)
                 append_data_row(worksheet, "weight", w)
-                # Update weight column in profile row so /user always shows latest
                 worksheet.update("E1", [[w]])
             except Exception as e:
                 logger.error(f"Sheet write error during weight update: {e}")
@@ -628,7 +801,6 @@ def webhook():
 
     async def process():
         application = Application.builder().token(BOT_TOKEN).build()
-        # Register all command handlers
         application.add_handler(CommandHandler("start",        cmd_start))
         application.add_handler(CommandHandler("register",     cmd_register))
         application.add_handler(CommandHandler("user",         cmd_user))
@@ -637,6 +809,8 @@ def webhook():
         application.add_handler(CommandHandler("resettrack",   cmd_resettrack))
         application.add_handler(CommandHandler("caloriegraph", cmd_caloriegraph))
         application.add_handler(CommandHandler("weightgraph",  cmd_weightgraph))
+        application.add_handler(CommandHandler("subscribe",    cmd_subscribe))
+        application.add_handler(CommandHandler("unsubscribe",  cmd_unsubscribe))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
         await application.initialize()
         update = Update.de_json(data, application.bot)
@@ -648,13 +822,20 @@ def webhook():
 
 @app.route("/", methods=["GET"])
 def index():
-    # Health check — visit Cloud Run URL in browser to confirm bot is alive
-    token_status  = "Token found"               if BOT_TOKEN        else "Token MISSING"
-    sheets_status = "Sheets credentials found"  if SHEETS_CREDS_RAW else "Sheets credentials MISSING"
-    sheets_id     = f"Sheet ID: {SHEETS_ID}"    if SHEETS_ID        else "Sheet ID MISSING"
-    return f"Bot is running! {token_status} | {sheets_status} | {sheets_id}", 200
+    # Health check — shows token, sheets and subscription status
+    token_status  = "Token found"              if BOT_TOKEN        else "Token MISSING"
+    sheets_status = "Sheets credentials found" if SHEETS_CREDS_RAW else "Sheets credentials MISSING"
+    sheets_id     = f"Sheet ID: {SHEETS_ID}"   if SHEETS_ID        else "Sheet ID MISSING"
+    sub_count     = f"{len(subscribed_users)} subscribed users"
+    return f"Bot is running! {token_status} | {sheets_status} | {sheets_id} | {sub_count}", 200
 
 
-# Runs only when executing `python bot.py` directly; production uses gunicorn (see Dockerfile)
+# ── Startup ───────────────────────────────────────────────────────
+# Load subscriptions from Sheets and start the reminder scheduler.
+# Both run before Flask starts serving requests so reminders are
+# active from the moment the container comes up.
+load_subscriptions_from_sheets()
+start_scheduler_thread()
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
