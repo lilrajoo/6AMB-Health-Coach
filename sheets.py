@@ -83,3 +83,32 @@ def load_subscriptions_from_sheets():
                 continue
     except Exception as e:
         logger.error(f"Error loading subscriptions: {e}")
+
+def get_todays_calories(worksheet):
+    # Reads all calorie entries from today and returns the sum
+    today      = datetime.now().strftime("%Y-%m-%d")
+    all_values = worksheet.get_all_values()
+    total      = 0
+    for row in all_values[3:]:
+        if len(row) >= 3 and row[1].strip().lower() == "calories" and row[0].strip() == today:
+            try:
+                total += float(row[2].strip())
+            except ValueError:
+                continue
+    return total
+
+
+def delete_todays_calories(worksheet):
+    # Deletes all calorie rows logged today from the sheet
+    # Iterates in reverse so row indices don't shift during deletion
+    today      = datetime.now().strftime("%Y-%m-%d")
+    all_values = worksheet.get_all_values()
+    rows_to_delete = []
+
+    for i, row in enumerate(all_values[3:], start=4):  # start=4 because rows 1-3 are headers
+        if len(row) >= 3 and row[1].strip().lower() == "calories" and row[0].strip() == today:
+            rows_to_delete.append(i)
+
+    # Delete in reverse order so indices remain valid
+    for row_index in reversed(rows_to_delete):
+        worksheet.delete_rows(row_index)

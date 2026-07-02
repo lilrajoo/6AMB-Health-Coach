@@ -2,7 +2,9 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 from state import user_state, user_name, user_height, user_weight, user_calories, user_age, user_gender
-from sheets import get_sheets_client, get_user_sheet, write_profile, append_data_row, read_data_rows
+from sheets import (get_sheets_client, get_user_sheet, write_profile,
+                    append_data_row, read_data_rows,
+                    get_todays_calories, delete_todays_calories)
 from helpers import calc_bmi, calc_tdee, get_calorie_note
 from graphs import build_calorie_graph, build_weight_graph
 from reminders import subscribed_users
@@ -90,7 +92,18 @@ async def cmd_updateweight(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_track(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    total   = user_calories.get(user_id, 0)
+
+    # If no in-memory total, reload today's sum from sheet
+    if user_id not in user_calories:
+        try:
+            client    = get_sheets_client()
+            worksheet = get_user_sheet(client, user_id)
+            user_calories[user_id] = get_todays_calories(worksheet)
+        except Exception as e:
+            logger.error(f"Error reloading calories from sheet: {e}")
+            user_calories[user_id] = 0
+
+    total = user_calories.get(user_id, 0)
     user_state[user_id] = "awaiting_calories"
     await update.message.reply_text(
         f"🍽️ *Calorie Tracker*\n\nCurrent daily total: *{int(total)} kcal*\n\n"
@@ -99,9 +112,16 @@ async def cmd_track(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_resettrack(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_calories[update.effective_user.id] = 0
+    user_id = update.effective_user.id
+    user_calories[user_id] = 0
+    try:
+        client    = get_sheets_client()
+        worksheet = get_user_sheet(client, user_id)
+        delete_todays_calories(worksheet)
+    except Exception as e:
+        logger.error(f"Sheet delete error during reset: {e}")
     await update.message.reply_text(
-        "🔄 Calorie total reset to *0 kcal*. Use /track to start logging again.",
+        "🔄 Calorie total reset to *0 kcal* and today's entries removed.\nUse /track to start logging again.",
         parse_mode="Markdown"
     )
 
