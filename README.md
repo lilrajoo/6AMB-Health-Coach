@@ -1,7 +1,5 @@
 # 🏋️ 6AMB Health Coach Bot
 
-> A Telegram bot built for the 6AMB unit to track BMI, daily calorie intake, and weight progress, with automated reminders, personal data storage per user, and admin analytics via Google Sheets.
-
 ---
 
 ## What It Does
