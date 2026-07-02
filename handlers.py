@@ -93,7 +93,7 @@ async def cmd_track(update: Update, context: ContextTypes.DEFAULT_TYPE):
     total   = user_calories.get(user_id, 0)
     user_state[user_id] = "awaiting_calories"
     await update.message.reply_text(
-        f"🍽️ *Calorie Tracker*\n\nCurrent daily total: *{total} kcal*\n\n"
+        f"🍽️ *Calorie Tracker*\n\nCurrent daily total: *{int(total)} kcal*\n\n"
         f"Enter calories to add (e.g. 350):", parse_mode="Markdown"
     )
 
@@ -320,7 +320,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 target_line = ""
 
             await update.message.reply_text(
-                f"🍽️ *Calorie Log Updated*\n\nTotal today: *{total} kcal*\n"
+                f"🍽️ *Calorie Log Updated*\n\nTotal today: *{int(total)} kcal*\n"
                 f"{target_line}{note}\n\n"
                 f"Use /track to add more or /resettrack to reset.",
                 parse_mode="Markdown"
