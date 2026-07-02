@@ -313,33 +313,52 @@ def build_weight_graph(weight_rows):
 
 # ════════════════════════════════════════════════════════════════════
 #  REMINDER SYSTEM
-#  Runs in a background thread separate from Flask.
-#  Uses the `schedule` library to fire jobs at fixed SGT times.
-#  Each job sends a Telegram message to every user in subscribed_users.
-#  asyncio.run() is used inside the thread since the thread has no
-#  existing event loop — each send gets its own short-lived loop.
 # ════════════════════════════════════════════════════════════════════
 
+subscribed_users = set()
+
+def write_subscription_status(user_id, subscribed):
+    # Persists subscription status to column F of row 1 in the user's sheet
+    try:
+        client    = get_sheets_client()
+        worksheet = get_user_sheet(client, user_id)
+        worksheet.update("F1", [[str(subscribed)]])
+    except Exception as e:
+        logger.error(f"Subscription write error {user_id}: {e}")
+
+
+def load_subscriptions_from_sheets():
+    # On startup, scans all user tabs and reloads subscribed user IDs from column F row 1
+    if not SHEETS_CREDS_RAW or not SHEETS_ID:
+        return
+    try:
+        client      = get_sheets_client()
+        spreadsheet = client.open_by_key(SHEETS_ID)
+        for sheet in spreadsheet.worksheets():
+            if sheet.title.lower() == "master":
+                continue
+            try:
+                row1 = sheet.row_values(1)
+                if len(row1) >= 6 and row1[5].strip().lower() == "true":
+                    subscribed_users.add(int(sheet.title))
+            except Exception:
+                continue
+    except Exception as e:
+        logger.error(f"Error loading subscriptions: {e}")
+
+
 async def send_reminder(user_id, message):
-    # Sends a single reminder message to one user via the Telegram Bot API.
-    # Builds a minimal application just for sending — no handlers needed.
+    # Sends a reminder message to a single user
     try:
         application = Application.builder().token(BOT_TOKEN).build()
-        await application.bot.send_message(
-            chat_id=user_id,
-            text=message,
-            parse_mode="Markdown"
-        )
-        logger.info(f"Reminder sent to user {user_id}")
+        await application.bot.send_message(chat_id=user_id, text=message, parse_mode="Markdown")
+        logger.info(f"Reminder sent to {user_id}")
     except Exception as e:
-        logger.error(f"Failed to send reminder to {user_id}: {e}")
+        logger.error(f"Reminder failed for {user_id}: {e}")
 
 
 def fire_reminder(message):
-    # Called by the scheduler — loops through all subscribed users
-    # and sends each one the reminder message.
-    # asyncio.run() creates a fresh event loop for each send since
-    # this runs in a background thread with no existing loop.
+    # Sends the reminder to all subscribed users
     if not subscribed_users:
         return
     for user_id in list(subscribed_users):
@@ -347,26 +366,23 @@ def fire_reminder(message):
 
 
 def job_midday():
-    # Mon–Fri 14:00 SGT — after lunch calorie reminder
-    # Checks the current SGT day before firing to enforce Mon–Fri only
-    now = datetime.now(SGT)
-    if now.weekday() >= 5:  # 5=Saturday, 6=Sunday
-        return
-    else:
-        fire_reminder(
-        "🍽️ *Afternoon Check-in!*\n\n"
-        "Don't forget to log your lunch calories!\n"
-        "Use /track to add them to today's total. 💪"
-        )
-
-
-def job_evening():
-    # Mon–Thu 20:30 SGT — end of day calorie reminder
+    # 14:00 SGT (06:00 UTC) Mon–Fri after-lunch reminder
     now = datetime.now(SGT)
     if now.weekday() >= 5:
         return
-    # Friday gets a different message with the weight update reminder
-    if now.weekday() == 4:  # 4 = Friday
+    fire_reminder(
+        "🍽️ *Afternoon Check-in!*\n\n"
+        "Don't forget to log your lunch calories!\n"
+        "Use /track to add them to today's total. 💪"
+    )
+
+
+def job_evening():
+    # 20:30 SGT (12:30 UTC) Mon–Fri end-of-day reminder; Friday includes weigh-in
+    now = datetime.now(SGT)
+    if now.weekday() >= 5:
+        return
+    if now.weekday() == 4:  # Friday
         fire_reminder(
             "🍽️ *End of Day Check-in!*\n\n"
             "Don't forget to log your dinner calories!\n"
@@ -383,22 +399,21 @@ def job_evening():
 
 
 def run_scheduler():
-    # Background thread function — runs forever, checking every 60 seconds
-    # whether any scheduled jobs are due. Uses SGT time strings for scheduling.
-    # schedule library compares against local system time, so we check SGT
-    # manually inside each job function rather than relying on schedule's clock.
-    schedule.every().day.at("14:00").do(job_midday)   # 14:00 SGT daily (Mon–Fri check inside job)
-    schedule.every().day.at("20:30").do(job_evening)  # 20:30 SGT daily (Mon–Fri check inside job)
-
-    logger.info("Reminder scheduler started — 14:00 and 20:30 SGT, Mon–Fri")
+    # Background thread — checks every 60s for pending jobs
+    # Times are in UTC (Cloud Run runs in UTC, SGT = UTC+8)
+    # ── TESTING: both jobs at 07:35 UTC = 15:35 SGT ──────────────
+    schedule.every().day.at("07:35").do(job_midday)
+    schedule.every().day.at("07:35").do(job_evening)
+    # ── PRODUCTION (uncomment these and remove above two): ─────────
+    # schedule.every().day.at("06:00").do(job_midday)   # 14:00 SGT
+    # schedule.every().day.at("12:30").do(job_evening)  # 20:30 SGT
+    logger.info("Scheduler started")
     while True:
         schedule.run_pending()
-        time.sleep(60)  # Check every minute
+        time.sleep(60)
 
 
 def start_scheduler_thread():
-    # Launches the scheduler in a daemon thread so it doesn't block Flask
-    # from starting and dies cleanly when the main process exits.
     t = threading.Thread(target=run_scheduler, daemon=True)
     t.start()
     logger.info("Scheduler thread launched")
@@ -426,53 +441,31 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Adds the user to the subscribed_users set and saves to their sheet (column F).
-    # Reminders fire Mon–Fri at 14:00 and 20:30 SGT.
-    # Fridays at 20:30 also include a weekly weight update reminder.
     user_id = update.effective_user.id
     if user_id in subscribed_users:
-        await update.message.reply_text(
-            "🔔 You're already subscribed to reminders!\n"
-            "Use /unsubscribe to turn them off."
-        )
+        await update.message.reply_text("🔔 Already subscribed! Use /unsubscribe to turn off.")
         return
     subscribed_users.add(user_id)
-    # Persist to sheet so subscription survives container restarts
-    threading.Thread(
-        target=write_subscription_status,
-        args=(user_id, True),
-        daemon=True
-    ).start()
+    threading.Thread(target=write_subscription_status, args=(user_id, True), daemon=True).start()
     await update.message.reply_text(
         "🔔 *Subscribed to daily reminders!*\n\n"
-        "You'll receive reminders:\n"
-        "🍽️ *14:00* — After lunch calorie check-in\n"
-        "🍽️ *20:30* — After dinner calorie check-in\n"
-        "⚖️ *Fridays at 20:30* — Weekly weigh-in reminder\n\n"
+        "🍽️ *14:00* — After lunch check-in\n"
+        "🍽️ *20:30* — After dinner check-in\n"
+        "⚖️ *Fridays 20:30* — Weekly weigh-in reminder\n\n"
         "Monday to Friday only. Use /unsubscribe to stop.",
         parse_mode="Markdown"
     )
 
 
 async def cmd_unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Removes the user from subscribed_users and updates their sheet column F.
     user_id = update.effective_user.id
     if user_id not in subscribed_users:
-        await update.message.reply_text(
-            "🔕 You're not currently subscribed to reminders.\n"
-            "Use /subscribe to turn them on."
-        )
+        await update.message.reply_text("🔕 You're not subscribed. Use /subscribe to turn on.")
         return
     subscribed_users.discard(user_id)
-    threading.Thread(
-        target=write_subscription_status,
-        args=(user_id, False),
-        daemon=True
-    ).start()
+    threading.Thread(target=write_subscription_status, args=(user_id, False), daemon=True).start()
     await update.message.reply_text(
-        "🔕 *Unsubscribed from reminders.*\n\n"
-        "You won't receive any more daily check-ins.\n"
-        "Use /subscribe to turn them back on anytime.",
+        "🔕 *Unsubscribed from reminders.*\n\nUse /subscribe to turn back on anytime.",
         parse_mode="Markdown"
     )
 
@@ -860,3 +853,5 @@ start_scheduler_thread()
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+    load_subscriptions_from_sheets()
+    start_scheduler_thread()
