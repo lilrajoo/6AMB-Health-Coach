@@ -1,11 +1,11 @@
-# 6AMB-Health-Coach
-# 🏋️ 6AMB Health Coach Bot
+ 6AMB-Health-Coach
+ 🏋️ 6AMB Health Coach Bot
 
 > A Telegram bot built for the 6AMB unit to track BMI, daily calorie intake, and weight progress — with automated reminders, personal data storage per user, and admin analytics via Google Sheets.
 
 ---
 
-## What It Does
+ What It Does
 
 6AMB Health Coach is a Telegram bot designed to help unit members maintain awareness of their health metrics throughout the week. Each member registers once and the bot handles the rest — tracking calories across the day, logging weight over time, generating visual progress charts, and sending daily reminders at meal times.
 
@@ -13,7 +13,7 @@ All data is stored per-user in Google Sheets, meaning nothing is lost between se
 
 ---
 
-## Features
+ Features
 
  👤 Personal Profile
 Each member registers with their rank, full name, height, weight, age and gender. The bot calculates their BMI and a personalised daily calorie target using the Mifflin-St Jeor equation, displayed every time they check their profile.
@@ -44,7 +44,7 @@ A Master sheet provides a real-time overview of any member's data. The admin sel
 
 ---
 
-## Commands
+ Commands
 
 | Command | Description |
 |---|---|
