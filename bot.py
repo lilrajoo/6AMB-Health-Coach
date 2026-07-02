@@ -352,11 +352,12 @@ def job_midday():
     now = datetime.now(SGT)
     if now.weekday() >= 5:  # 5=Saturday, 6=Sunday
         return
-    fire_reminder(
+    else:
+        fire_reminder(
         "🍽️ *Afternoon Check-in!*\n\n"
         "Don't forget to log your lunch calories!\n"
         "Use /track to add them to today's total. 💪"
-    )
+        )
 
 
 def job_evening():
