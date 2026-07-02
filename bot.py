@@ -792,6 +792,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ── Flask routes ──────────────────────────────────────────────────
 
+async def cmd_unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Catches any command that doesn't match a registered handler
+    # and reminds the user of the available commands
+    await update.message.reply_text(
+        "❓ *Unknown command.*\n\n"
+        "Here are the available commands:\n\n"
+        "📋 /register — Register your Name, Height & Weight\n"
+        "👤 /user — View your profile & BMI\n"
+        "⚖️ /updateweight — Update your weight & recalculate BMI\n"
+        "🍽️ /track — Log caloric intake (adds to daily total)\n"
+        "🔄 /resettrack — Reset today's calorie total to zero\n"
+        "📊 /caloriegraph — Weekly average calorie chart\n"
+        "📉 /weightgraph — Last 5 weight entries chart\n"
+        "🔔 /subscribe — Subscribe to daily calorie reminders\n"
+        "🔕 /unsubscribe — Unsubscribe from reminders",
+        parse_mode="Markdown"
+    )
+
 @app.route("/webhook", methods=["POST"])
 def webhook():
     # Receives all Telegram updates; builds app, registers handlers, processes update
@@ -812,6 +830,8 @@ def webhook():
         application.add_handler(CommandHandler("subscribe",    cmd_subscribe))
         application.add_handler(CommandHandler("unsubscribe",  cmd_unsubscribe))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        # Must be last — catches all unrecognised commands
+        application.add_handler(MessageHandler(filters.COMMAND, cmd_unknown))
         await application.initialize()
         update = Update.de_json(data, application.bot)
         await application.process_update(update)
