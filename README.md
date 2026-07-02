@@ -1,6 +1,5 @@
 # 🏋️ 6AMB Health Coach Bot
 
----
 
 ## What It Does
 
@@ -8,7 +7,6 @@
 
 All data is stored per user in Google Sheets, meaning nothing is lost between sessions and an admin can review any member's progress at any time from a single master dashboard.
 
----
 
 ## Features
 
@@ -48,7 +46,6 @@ A master sheet provides a real-time overview of any member's data. The admin sel
 - Weekly average calorie intake for the past month.
 - Embedded charts with trend lines.
 
----
 
 ## Commands
 
