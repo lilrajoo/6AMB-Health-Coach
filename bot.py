@@ -402,11 +402,11 @@ def run_scheduler():
     # Background thread — checks every 60s for pending jobs
     # Times are in UTC (Cloud Run runs in UTC, SGT = UTC+8)
     # ── TESTING: both jobs at 07:35 UTC = 15:35 SGT ──────────────
-    schedule.every().day.at("07:35").do(job_midday)
-    schedule.every().day.at("07:35").do(job_evening)
+    #schedule.every().day.at("07:35").do(job_midday)
+    #schedule.every().day.at("07:35").do(job_evening)
     # ── PRODUCTION (uncomment these and remove above two): ─────────
-    # schedule.every().day.at("06:00").do(job_midday)   # 14:00 SGT
-    # schedule.every().day.at("12:30").do(job_evening)  # 20:30 SGT
+    schedule.every().day.at("06:00").do(job_midday)   # 14:00 SGT
+    schedule.every().day.at("12:30").do(job_evening)  # 20:30 SGT
     logger.info("Scheduler started")
     while True:
         schedule.run_pending()
