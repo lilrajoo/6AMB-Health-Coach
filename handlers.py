@@ -324,24 +324,39 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 client    = get_sheets_client()
                 worksheet = get_user_sheet(client, user_id)
                 append_data_row(worksheet, "calories", cal)
-            except Exception as e:
-                logger.error(f"Sheet write error during calorie log: {e}")
 
-            height = user_height.get(user_id)
-            weight = user_weight.get(user_id)
-            age    = user_age.get(user_id)
-            gender = user_gender.get(user_id)
+                # Reload profile from sheet if any field is missing in memory
+                height = user_height.get(user_id)
+                weight = user_weight.get(user_id)
+                age    = user_age.get(user_id)
+                gender = user_gender.get(user_id)
+
+                if not height or not weight or not age or not gender:
+                    all_vals = worksheet.get_all_values()
+                    if len(all_vals) > 0 and len(all_vals[0]) >= 5:
+                        row    = all_vals[0]
+                        height = float(row[1]) if row[1] else None; user_height[user_id] = height
+                        age    = int(row[2])   if row[2] else None; user_age[user_id]    = age
+                        gender = row[3];       user_gender[user_id] = gender
+                    weight_rows = read_data_rows(worksheet, "weight")
+                    if weight_rows:
+                        weight = weight_rows[-1][1]
+                        user_weight[user_id] = weight
+
+            except Exception as e:
+                logger.error(f"Sheet error during calorie log: {e}")
 
             if height and weight and age and gender:
                 tdee        = calc_tdee(height, weight, age, gender)
                 note        = get_calorie_note(total, tdee)
                 target_line = f"Your daily target: *{tdee} kcal*\n"
             else:
-                note        = "Use /register to get personalised calorie targets."
+                note        = "⚠️ Profile incomplete — use /register to get personalised targets."
                 target_line = ""
 
             await update.message.reply_text(
-                f"🍽️ *Calorie Log Updated*\n\nTotal today: *{int(total)} kcal*\n"
+                f"🍽️ *Calorie Log Updated*\n\n"
+                f"Total today: *{int(total)} kcal*\n"
                 f"{target_line}{note}\n\n"
                 f"Use /track to add more or /resettrack to reset.",
                 parse_mode="Markdown"
