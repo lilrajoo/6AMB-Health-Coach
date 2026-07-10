@@ -73,7 +73,7 @@ def remind():
     if reminder_type == "midday":
         asyncio.run(fire_reminder_async(
             "🍽️ *Afternoon Check-in!*\n\n"
-            "Don't forget to log your lunch calories!\n"
+            "Don't forget to log your calories!\n"
             "Use /track to add them to today's total. 💪"
         ))
     elif reminder_type == "evening":
@@ -83,7 +83,7 @@ def remind():
         if now.weekday() == 4:  # Friday
             asyncio.run(fire_reminder_async(
                 "🍽️ *End of Day Check-in!*\n\n"
-                "Don't forget to log your dinner calories!\n"
+                "Don't forget to log your calories!\n"
                 "Use /track to add them to today's total.\n\n"
                 "⚖️ *It's Friday — time for your weekly weigh-in!*\n"
                 "Log your current weight with /updateweight to track your progress. 💪"
