@@ -7,7 +7,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from handlers import (cmd_start, cmd_register, cmd_user, cmd_updateweight,
                       cmd_track, cmd_resettrack, cmd_caloriegraph,
                       cmd_weightgraph, cmd_unknown, handle_message)
-from reminders import (cmd_subscribe, cmd_unsubscribe, start_scheduler_thread)
+from reminders import (cmd_subscribe, cmd_unsubscribe, fire_reminder_async)
 from sheets import load_subscriptions_from_sheets
 
 logging.basicConfig(level=logging.INFO)
@@ -57,7 +57,44 @@ def index():
 
 # Load subscriptions and start reminder scheduler on startup
 load_subscriptions_from_sheets()
-start_scheduler_thread()
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+
+@app.route("/remind", methods=["POST"])
+def remind():
+    # Called by Cloud Scheduler at set times
+    # Reads the reminder type from the request body
+    # "midday" or "evening" — fires the appropriate reminder job
+    data          = request.get_json(force=True) or {}
+    reminder_type = data.get("type", "")
+
+    if reminder_type == "midday":
+        asyncio.run(fire_reminder_async(
+            "🍽️ *Afternoon Check-in!*\n\n"
+            "Don't forget to log your lunch calories!\n"
+            "Use /track to add them to today's total. 💪"
+        ))
+    elif reminder_type == "evening":
+        from zoneinfo import ZoneInfo
+        from datetime import datetime
+        now = datetime.now(ZoneInfo("Asia/Singapore"))
+        if now.weekday() == 4:  # Friday
+            asyncio.run(fire_reminder_async(
+                "🍽️ *End of Day Check-in!*\n\n"
+                "Don't forget to log your dinner calories!\n"
+                "Use /track to add them to today's total.\n\n"
+                "⚖️ *It's Friday — time for your weekly weigh-in!*\n"
+                "Log your current weight with /updateweight to track your progress. 💪"
+            ))
+        else:
+            asyncio.run(fire_reminder_async(
+                "🍽️ *End of Day Check-in!*\n\n"
+                "Don't forget to log your calories!\n"
+                "Use /track to add them to today's total. 💪"
+            ))
+    else:
+        return "Unknown reminder type", 400
+
+    return "ok", 200

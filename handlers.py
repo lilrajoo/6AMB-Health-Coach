@@ -107,7 +107,8 @@ async def cmd_track(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_state[user_id] = "awaiting_calories"
     await update.message.reply_text(
         f"🍽️ *Calorie Tracker*\n\nCurrent daily total: *{int(total)} kcal*\n\n"
-        f"Enter calories to add (e.g. 350):", parse_mode="Markdown"
+        f"Enter calories to add (e.g. 350):",
+        parse_mode="Markdown"
     )
 
 
@@ -121,7 +122,7 @@ async def cmd_resettrack(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Sheet delete error during reset: {e}")
     await update.message.reply_text(
-        "🔄 Calorie total reset to *0 kcal* and today's entries removed.\nUse /track to start logging again.",
+        "🔄 Calorie total reset to *0 kcal*.\nUse /track to start logging again.",
         parse_mode="Markdown"
     )
 
