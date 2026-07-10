@@ -7,7 +7,7 @@ from sheets import (get_sheets_client, get_user_sheet, write_profile,
                     get_todays_calories, delete_todays_calories)
 from helpers import calc_bmi, calc_tdee, get_calorie_note
 from graphs import build_calorie_graph, build_weight_graph
-from reminders import subscribed_users
+from state import subscribed_users
 
 logger = logging.getLogger(__name__)
 
