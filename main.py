@@ -55,10 +55,6 @@ def index():
     return f"Bot is running! {token_status} | {sheets_status} | {sheets_id}", 200
 
 
-# Load subscriptions and start reminder scheduler on startup
-load_subscriptions_from_sheets()
-
-
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
 
