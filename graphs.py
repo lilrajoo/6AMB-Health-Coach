@@ -102,8 +102,16 @@ def build_weight_graph(weight_rows):
             markersize=8, markerfacecolor="#f7a76a",
             markeredgecolor="white", markeredgewidth=1.5, zorder=3, label="Weight")
 
+    # Dynamic offset based on the actual weight range so labels stay close to points
+    weight_range = max(weights) - min(weights) if len(weights) > 1 else 1
+    offset = max(weight_range * 0.05, 0.02)  # 5% of range, minimum 0.02
+
+    # Dynamic offset based on the actual weight range so labels stay close to points
+    weight_range = max(weights) - min(weights) if len(weights) > 1 else 1
+    offset = max(weight_range * 0.05, 0.02)  # 5% of range, minimum 0.02
+
     for d, w in zip(dates, weights):
-        ax.text(d, w + 0.3, f"{w} kg", ha="center", va="bottom",
+        ax.text(d, w + offset, f"{w} kg", ha="center", va="bottom",
                 color="white", fontsize=10, fontweight="bold")
 
     if len(dates) >= 2:
