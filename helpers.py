@@ -16,9 +16,21 @@ def calc_tdee(height_cm, weight_kg, age, gender):
 
 
 def get_calorie_note(total, tdee):
-    ratio = total / tdee
-    if ratio < 0.5:    return f"⚠️ Very low — under 50% of your daily target ({tdee} kcal)."
-    elif ratio < 0.75: return f"🟡 Below target — aim for around {tdee} kcal today."
-    elif ratio <= 1.0: return f"✅ On track — within your daily target of {tdee} kcal."
-    elif ratio <= 1.2: return f"🟡 Slightly over your daily target of {tdee} kcal."
-    else:              return f"🔴 Significantly over your daily target of {tdee} kcal."
+    ratio  = total / tdee
+    excess = int(total - tdee)
+
+    if ratio < 0.5:
+        return f"⚠️ Very low — under 50% of your daily target ({tdee} kcal)."
+    elif ratio < 0.75:
+        return f"🟡 Below target — aim for around {tdee} kcal today."
+    elif ratio <= 1.0:
+        return f"✅ On track — within your daily target of {tdee} kcal."
+    elif ratio <= 1.1:
+        # Within 10% over — genuinely slightly over
+        return f"🟡 Slightly over your daily target of {tdee} kcal. (+{excess} kcal)"
+    elif ratio <= 1.3:
+        # 10-30% over
+        return f"🔴 Over your daily target by *{excess} kcal*. Consider a light workout to burn it off."
+    else:
+        # More than 30% over — significantly over
+        return f"🔴 *Significantly over* your daily target by *{excess} kcal*. Try to burn it off with exercise!"
