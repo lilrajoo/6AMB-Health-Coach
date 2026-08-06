@@ -104,11 +104,7 @@ def build_weight_graph(weight_rows):
 
     # Dynamic offset based on the actual weight range so labels stay close to points
     weight_range = max(weights) - min(weights) if len(weights) > 1 else 1
-    offset = max(weight_range * 0.05, 0.02)  # 5% of range, minimum 0.02
-
-    # Dynamic offset based on the actual weight range so labels stay close to points
-    weight_range = max(weights) - min(weights) if len(weights) > 1 else 1
-    offset = max(weight_range * 0.05, 0.02)  # 5% of range, minimum 0.02
+    offset = max(weight_range * 0.025, 0.01)  # 5% of range, minimum 0.02
 
     for d, w in zip(dates, weights):
         ax.text(d, w + offset, f"{w} kg", ha="center", va="bottom",
