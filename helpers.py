@@ -27,7 +27,7 @@ def get_calorie_note(total, tdee):
         return f"\n✅ On track — within your daily target of {tdee} kcal."
     elif ratio <= 1.1:
         # Within 10% over — genuinely slightly over
-        return f"\n🟡 Slightly over your daily target of {tdee} kcal by (+{excess} kcal)"
+        return f"\n🟡 Slightly over your daily target by *{excess} kcal*. Consider a light workout to burn it off."
     elif ratio <= 1.3:
         # 10-30% over
         return f"\n🔴 Over your daily target by *{excess} kcal*. Consider a light workout to burn it off."
