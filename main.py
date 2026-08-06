@@ -7,8 +7,9 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from handlers import (cmd_start, cmd_register, cmd_user, cmd_updateweight,
                       cmd_track, cmd_resettrack, cmd_caloriegraph,
                       cmd_weightgraph, cmd_unknown, handle_message)
-from reminders import (cmd_subscribe, cmd_unsubscribe, fire_reminder_async)
-from sheets import load_subscriptions_from_sheets
+from reminders import fire_reminder_async, fire_evening_reminder_async
+from handlers import cmd_help
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -35,8 +36,7 @@ def webhook():
         application.add_handler(CommandHandler("resettrack",   cmd_resettrack))
         application.add_handler(CommandHandler("caloriegraph", cmd_caloriegraph))
         application.add_handler(CommandHandler("weightgraph",  cmd_weightgraph))
-        application.add_handler(CommandHandler("subscribe",    cmd_subscribe))
-        application.add_handler(CommandHandler("unsubscribe",  cmd_unsubscribe))
+        application.add_handler(CommandHandler("help", cmd_help))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
         application.add_handler(MessageHandler(filters.COMMAND, cmd_unknown))
         await application.initialize()
@@ -71,29 +71,25 @@ def remind():
     reminder_type = data.get("type", "")
 
     if reminder_type == "midday":
-        asyncio.run(fire_reminder_async(
-            "🍽️ *Afternoon Check-in!*\n\n"
-            "Don't forget to log your calories!\n"
-            "Use /track to add them to today's total. 💪"
-        ))
-    elif reminder_type == "evening":
         from zoneinfo import ZoneInfo
         from datetime import datetime
         now = datetime.now(ZoneInfo("Asia/Singapore"))
-        if now.weekday() == 4:  # Friday
+        if now.weekday() == 4:  # Friday — weigh-in reminder in the morning
             asyncio.run(fire_reminder_async(
-                "🍽️ *End of Day Check-in!*\n\n"
-                "Don't forget to log your calories!\n"
+                "🍽️ *Afternoon Check-in!*\n\n"
+                "Don't forget to log your lunch calories!\n"
                 "Use /track to add them to today's total.\n\n"
-                "⚖️ *It's Friday — time for your weekly weigh-in!*\n"
-                "Log your current weight with /updateweight to track your progress. 💪"
+                "⚖️ *Friday Weigh-in Reminder!*\n"
+                "Log your weight today with /updateweight to track your weekly progress. 💪"
             ))
         else:
             asyncio.run(fire_reminder_async(
-                "🍽️ *End of Day Check-in!*\n\n"
-                "Don't forget to log your calories!\n"
+                "🍽️ *Afternoon Check-in!*\n\n"
+                "Don't forget to log your lunch calories!\n"
                 "Use /track to add them to today's total. 💪"
             ))
+    elif reminder_type == "evening":
+        asyncio.run(fire_evening_reminder_async())
     else:
         return "Unknown reminder type", 400
 

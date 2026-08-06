@@ -7,7 +7,7 @@ from sheets import (get_sheets_client, get_user_sheet, write_profile,
                     get_todays_calories, delete_todays_calories)
 from helpers import calc_bmi, calc_tdee, get_calorie_note
 from graphs import build_calorie_graph, build_weight_graph
-from state import subscribed_users
+#from state import subscribed_users
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_state[update.effective_user.id] = "idle"
     await update.message.reply_text(
-        "👋 *Welcome to the BMI & Calorie Tracker Bot!*\n\n"
+        "👋 *Welcome to the 6AMB Health Coach Bot!*\n\n"
         "Available commands:\n\n"
         "📋 /register — Register your Name, Height & Weight\n"
         "👤 /user — View your profile & BMI\n"
@@ -24,8 +24,25 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🔄 /resettrack — Reset today's calorie total to zero\n"
         "📊 /caloriegraph — Weekly average calorie chart\n"
         "📉 /weightgraph — Last 5 weight entries chart\n"
-        "🔔 /subscribe — Subscribe to daily calorie reminders\n"
-        "🔕 /unsubscribe — Unsubscribe from reminders",
+        "❓ /help — Show this help message",
+        parse_mode="Markdown"
+    )
+
+
+async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Same as /start — shows the full command list
+    user_state[update.effective_user.id] = "idle"
+    await update.message.reply_text(
+        "👋 *Welcome to the 6AMB Health Coach Bot!*\n\n"
+        "Available commands:\n\n"
+        "📋 /register — Register your Name, Height & Weight\n"
+        "👤 /user — View your profile & BMI\n"
+        "⚖️ /updateweight — Update your weight & recalculate BMI\n"
+        "🍽️ /track — Log caloric intake (adds to daily total)\n"
+        "🔄 /resettrack — Reset today's calorie total to zero\n"
+        "📊 /caloriegraph — Weekly average calorie chart\n"
+        "📉 /weightgraph — Last 5 weight entries chart\n"
+        "❓ /help — Show this help message",
         parse_mode="Markdown"
     )
 
@@ -186,8 +203,7 @@ async def cmd_unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🔄 /resettrack — Reset today's calorie total to zero\n"
         "📊 /caloriegraph — Weekly average calorie chart\n"
         "📉 /weightgraph — Last 5 weight entries chart\n"
-        "🔔 /subscribe — Subscribe to daily calorie reminders\n"
-        "🔕 /unsubscribe — Unsubscribe from reminders",
+        "❓ /help — Show this help message",
         parse_mode="Markdown"
     )
 
@@ -266,8 +282,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             client    = get_sheets_client()
             worksheet = get_user_sheet(client, user_id)
-            is_subscribed = user_id in subscribed_users
-            write_profile(worksheet, name, height, age, gender_input, weight, is_subscribed)
+            write_profile(worksheet, name, height, age, gender_input, weight, False)
             append_data_row(worksheet, "weight", weight)
         except Exception as e:
             logger.error(f"Sheet write error during registration: {e}")

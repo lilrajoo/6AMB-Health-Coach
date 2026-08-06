@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 import gspread
 from google.oauth2.service_account import Credentials
-from state import subscribed_users
+
 
 logger = logging.getLogger(__name__)
 
@@ -38,13 +38,6 @@ def write_profile(worksheet, name, height, age, gender, weight, subscribed=False
     worksheet.update("A1:F1", [[name, height, age, gender, weight, str(subscribed)]])
 
 
-def write_subscription_status(user_id, subscribed):
-    try:
-        client    = get_sheets_client()
-        worksheet = get_user_sheet(client, user_id)
-        worksheet.update("F1", [[str(subscribed)]])
-    except Exception as e:
-        logger.error(f"Subscription write error {user_id}: {e}")
 
 
 def append_data_row(worksheet, entry_type, value):
@@ -66,23 +59,6 @@ def read_data_rows(worksheet, entry_type):
     return rows
 
 
-def load_subscriptions_from_sheets():
-    if not SHEETS_CREDS_RAW or not SHEETS_ID:
-        return
-    try:
-        client      = get_sheets_client()
-        spreadsheet = client.open_by_key(SHEETS_ID)
-        for sheet in spreadsheet.worksheets():
-            if sheet.title.lower() == "master":
-                continue
-            try:
-                row1 = sheet.row_values(1)
-                if len(row1) >= 6 and row1[5].strip().lower() == "true":
-                    subscribed_users.add(int(sheet.title))
-            except Exception:
-                continue
-    except Exception as e:
-        logger.error(f"Error loading subscriptions: {e}")
 
 def get_todays_calories(worksheet):
     # Reads all calorie entries from today and returns the sum
