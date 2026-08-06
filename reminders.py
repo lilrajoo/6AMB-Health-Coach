@@ -56,7 +56,10 @@ async def cmd_subscribe(update, context):
 async def cmd_unsubscribe(update, context):
     user_id = update.effective_user.id
     if user_id not in subscribed_users:
-        await update.message.reply_text("🔕 Not subscribed. Use /subscribe to turn on.")
+        await update.message.reply_text(
+            "🔕 Not subscribed. \n"
+            "Use /subscribe to turn on."
+            )
         return
     subscribed_users.discard(user_id)
     threading.Thread(
