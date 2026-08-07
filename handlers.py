@@ -382,5 +382,5 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     else:
         await update.message.reply_text(
-            "❓ Unknown command. Use /start to see all available commands."
+            "❓ Unknown command. Use /help to see all available commands."
         )
