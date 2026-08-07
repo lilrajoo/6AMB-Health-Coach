@@ -35,7 +35,8 @@ def get_user_sheet(client, user_id):
 
 
 def write_profile(worksheet, name, height, age, gender, weight, subscribed=False):
-    worksheet.update("A1:F1", [[name, height, age, gender, weight, str(subscribed)]])
+    # subscribed column removed — reminders now fire to all registered users
+    worksheet.update("A1:E1", [[name, height, age, gender, weight]])
 
 
 

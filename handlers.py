@@ -281,7 +281,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             client    = get_sheets_client()
             worksheet = get_user_sheet(client, user_id)
-            write_profile(worksheet, name, height, age, gender_input, weight, False)
+            write_profile(worksheet, name, height, age, gender_input, weight)
             append_data_row(worksheet, "weight", weight)
         except Exception as e:
             logger.error(f"Sheet write error during registration: {e}")
