@@ -96,7 +96,7 @@ async def fire_evening_reminder_async():
                     "Don't forget to log your dinner calories!\n"
                     "Use /track to add them to today's total.\n\n"
                     "⚖️ *It's Friday — time for your weekly weigh-in!*\n"
-                    "Log your current weight with /updateweight to track your progress. 💪"
+                    "Log your current weight with \n/updateweight to track your progress. 💪"
                 )
             else:
                 msg = (
