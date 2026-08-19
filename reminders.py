@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from telegram.ext import Application
-from sheets import get_sheets_client, get_todays_calories, read_data_rows
+from sheets import get_sheets_client, get_todays_calories
 from helpers import calc_tdee
 
 logger    = logging.getLogger(__name__)
@@ -49,14 +49,38 @@ async def send_reminder(user_id, message):
 
 
 async def fire_reminder_async(message):
-    # Sends reminder to all registered users concurrently
-    # No subscription needed — all registered users receive reminders
+    # Sends a flat reminder to all registered users concurrently (used for midday)
     user_ids = get_all_user_ids()
     if not user_ids:
         logger.info("No registered users — skipping reminder")
         return
     tasks = [send_reminder(user_id, message) for user_id in user_ids]
     await asyncio.gather(*tasks)
+
+
+def build_midday_message():
+    return (
+        "🍽️ *Afternoon Check-in!*\n\n"
+        "Don't forget to log your calories!\n"
+        "Use /track to add them to today's total. 💪"
+    )
+
+
+def _build_evening_base_message(is_thursday):
+    if is_thursday:
+        return (
+            "🍽️ *End of Day Check-in!*\n\n"
+            "Don't forget to log your dinner calories!\n"
+            "Use /track to add them to today's total.\n\n"
+            "⚖️ *It's Thursday — time for your weekly weigh-in!*\n"
+            "Take your weight at S1 branch tomorrow morning. Inform healthcoach if unable to attend with valid reason.\n\n"
+            "Log it with /updateweight afterward. 💪"
+        )
+    return (
+        "🍽️ *End of Day Check-in!*\n\n"
+        "Don't forget to log your dinner calories!\n"
+        "Use /track to add them to today's total. 💪"
+    )
 
 
 async def fire_evening_reminder_async():
@@ -66,8 +90,7 @@ async def fire_evening_reminder_async():
     if not user_ids:
         return
 
-    now        = datetime.now(SGT)
-    is_friday  = now.weekday() == 4
+    is_thursday = datetime.now(SGT).weekday() == 3
 
     try:
         client      = get_sheets_client()
@@ -78,32 +101,16 @@ async def fire_evening_reminder_async():
 
     async def send_to_user(user_id):
         try:
-            sheet    = spreadsheet.worksheet(str(user_id))
-            row1     = sheet.row_values(1)
-            # Read profile: NAME | HEIGHT | AGE | GENDER | WEIGHT
-            height   = float(row1[1]) if len(row1) > 1 and row1[1] else None
-            age      = int(row1[2])   if len(row1) > 2 and row1[2] else None
-            gender   = row1[3]        if len(row1) > 3 else None
-            weight   = float(row1[4]) if len(row1) > 4 and row1[4] else None
+            sheet  = spreadsheet.worksheet(str(user_id))
+            row1   = sheet.row_values(1)
+            # Profile layout: NAME | HEIGHT | AGE | GENDER | WEIGHT
+            height = float(row1[1]) if len(row1) > 1 and row1[1] else None
+            age    = int(row1[2])   if len(row1) > 2 and row1[2] else None
+            gender = row1[3]        if len(row1) > 3 else None
+            weight = float(row1[4]) if len(row1) > 4 and row1[4] else None
 
-            # Get today's calorie total from sheet
             today_cals = get_todays_calories(sheet)
-
-            # Build the base message
-            if is_friday:
-                msg = (
-                    "🍽️ *End of Day Check-in!*\n\n"
-                    "Don't forget to log your dinner calories!\n"
-                    "Use /track to add them to today's total.\n\n"
-                    "⚖️ *It's Friday — time for your weekly weigh-in!*\n"
-                    "Log your current weight with \n/updateweight to track your progress. 💪"
-                )
-            else:
-                msg = (
-                    "🍽️ *End of Day Check-in!*\n\n"
-                    "Don't forget to log your dinner calories!\n"
-                    "Use /track to add them to today's total. 💪"
-                )
+            msg        = _build_evening_base_message(is_thursday)
 
             # If profile complete and calories logged, check if over TDEE
             if height and age and gender and weight and today_cals > 0:

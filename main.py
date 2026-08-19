@@ -7,7 +7,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from handlers import (cmd_start, cmd_register, cmd_user, cmd_updateweight,
                       cmd_track, cmd_resettrack, cmd_caloriegraph,
                       cmd_weightgraph, cmd_unknown, handle_message)
-from reminders import fire_reminder_async, fire_evening_reminder_async
+from reminders import cmd_subscribe, cmd_unsubscribe, fire_reminder_async, build_midday_message, fire_evening_reminder_async
 from handlers import cmd_help
 
 
@@ -60,32 +60,13 @@ if __name__ == "__main__":
 
 @app.route("/remind", methods=["POST"])
 def remind():
-    # Called by Cloud Scheduler at set times
-    # Reads the reminder type from the request body
-    # "midday" or "evening" — fires the appropriate reminder job
     data          = request.get_json(force=True) or {}
     reminder_type = data.get("type", "")
 
     if reminder_type == "midday":
-        from zoneinfo import ZoneInfo
-        from datetime import datetime
-        now = datetime.now(ZoneInfo("Asia/Singapore"))
-        if now.weekday() == 4:  # Friday — weigh-in reminder in the morning
-            asyncio.run(fire_reminder_async(
-                "🍽️ *Afternoon Check-in!*\n\n"
-                "Don't forget to log your lunch calories!\n"
-                "Use /track to add them to today's total.\n\n"
-                "⚖️ *Friday Weigh-in Reminder!*\n"
-                "Log your weight today with /updateweight to track your weekly progress. 💪"
-            ))
-        else:
-            asyncio.run(fire_reminder_async(
-                "🍽️ *Afternoon Check-in!*\n\n"
-                "Don't forget to log your lunch calories!\n"
-                "Use /track to add them to today's total. 💪"
-            ))
+        asyncio.run(fire_reminder_async(build_midday_message()))
     elif reminder_type == "evening":
-        asyncio.run(fire_evening_reminder_async())
+        asyncio.run(fire_reminder_async(build_evening_message()))
     else:
         return "Unknown reminder type", 400
 
