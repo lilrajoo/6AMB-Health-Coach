@@ -71,3 +71,13 @@ def remind():
         return "Unknown reminder type", 400
 
     return "ok", 200
+
+@app.route("/test-infographics", methods=["POST"])
+def test_infographics():
+    from reminders import send_exercise_infographics
+    data = request.get_json(force=True) or {}
+    test_user_id = data.get("user_id")
+    if not test_user_id:
+        return "Missing user_id", 400
+    asyncio.run(send_exercise_infographics(int(test_user_id)))
+    return "sent", 200

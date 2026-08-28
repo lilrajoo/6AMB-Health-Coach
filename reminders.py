@@ -73,8 +73,8 @@ def _build_evening_base_message(is_thursday):
             "Don't forget to log your dinner calories!\n"
             "Use /track to add them to today's total.\n\n"
             "⚖️ *It's Thursday — time for your weekly weigh-in!*\n"
-            "Take your weight at S1 branch tomorrow morning. Inform healthcoach if unable to attend with valid reason.\n"
-            "Log it with /updateweight afterward. 💪"
+            "\nTake your weight at S1 branch tomorrow morning. Inform healthcoach if unable to attend with valid reason.\n"
+            "\nLog it with /updateweight afterward. 💪\n"
         )
     return (
         "🍽️ *End of Day Check-in!*\n\n"
@@ -112,16 +112,22 @@ async def fire_evening_reminder_async():
             today_cals = get_todays_calories(sheet)
             msg        = _build_evening_base_message(is_thursday)
 
-            # If profile complete and calories logged, check if over TDEE
+                        # If profile complete and calories logged, check if over TDEE
+            send_images = False
             if height and age and gender and weight and today_cals > 0:
                 tdee = calc_tdee(height, weight, age, gender)
+                send_images = False
                 if today_cals > tdee:
                     excess = int(today_cals - tdee)
                     msg += (
                         f"\n\n🔥 *You're {excess} kcal over your target today!*\n"
-                        f"Consider burning it off with some exercise.\n"
-                        f"[View Exercise Infographic]({EXERCISE_LINK})"
+                        f"Consider burning it off with some exercise. 👇"
                     )
+                    send_images = True
+
+                await send_reminder(user_id, msg)
+                if send_images:
+                    await send_exercise_infographics(user_id)
 
             await send_reminder(user_id, msg)
 
