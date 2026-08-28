@@ -12,7 +12,20 @@ BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 SGT       = ZoneInfo("Asia/Singapore")
 
 # Placeholder link for exercise infographic — fill this in when ready
-EXERCISE_LINK = "https://your-exercise-infographic-link-here"
+EXERCISE_IMAGES = [
+    "https://storage.googleapis.com/6amb-health-coach-assets/exercise1.jpeg",
+    "https://storage.googleapis.com/6amb-health-coach-assets/exercise2.jpeg",
+    "https://storage.googleapis.com/6amb-health-coach-assets/exercise3.jpeg",
+    "https://storage.googleapis.com/6amb-health-coach-assets/exercise4.jpeg",
+]
+
+async def send_exercise_infographics(user_id):
+    application = Application.builder().token(BOT_TOKEN).build()
+    for img_url in EXERCISE_IMAGES:
+        try:
+            await application.bot.send_photo(chat_id=user_id, photo=img_url)
+        except Exception as e:
+            logger.error(f"Failed to send infographic {img_url} to {user_id}: {e}")
 
 
 def get_all_user_ids():
