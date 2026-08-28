@@ -142,8 +142,6 @@ async def fire_evening_reminder_async():
             if send_images:
                 await send_exercise_infographics(user_id)
 
-            await send_reminder(user_id, msg)
-
         except Exception as e:
             logger.error(f"Evening reminder error for {user_id}: {e}")
 
