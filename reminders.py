@@ -112,11 +112,10 @@ async def fire_evening_reminder_async():
             today_cals = get_todays_calories(sheet)
             msg        = _build_evening_base_message(is_thursday)
 
-                        # If profile complete and calories logged, check if over TDEE
+            # If profile complete and calories logged, check if over TDEE
             send_images = False
             if height and age and gender and weight and today_cals > 0:
                 tdee = calc_tdee(height, weight, age, gender)
-                send_images = False
                 if today_cals > tdee:
                     excess = int(today_cals - tdee)
                     msg += (
@@ -125,9 +124,9 @@ async def fire_evening_reminder_async():
                     )
                     send_images = True
 
-                await send_reminder(user_id, msg)
-                if send_images:
-                    await send_exercise_infographics(user_id)
+            await send_reminder(user_id, msg)
+            if send_images:
+                await send_exercise_infographics(user_id)
 
             await send_reminder(user_id, msg)
 
