@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 from telegram.ext import Application
 from sheets import get_sheets_client, get_todays_calories
 from helpers import calc_tdee
+from telegram import InputMediaPhoto
 
 logger    = logging.getLogger(__name__)
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -21,11 +22,11 @@ EXERCISE_IMAGES = [
 
 async def send_exercise_infographics(user_id):
     application = Application.builder().token(BOT_TOKEN).build()
-    for img_url in EXERCISE_IMAGES:
-        try:
-            await application.bot.send_photo(chat_id=user_id, photo=img_url)
-        except Exception as e:
-            logger.error(f"Failed to send infographic {img_url} to {user_id}: {e}")
+    media = [InputMediaPhoto(media=url) for url in EXERCISE_IMAGES]
+    try:
+        await application.bot.send_media_group(chat_id=user_id, media=media)
+    except Exception as e:
+        logger.error(f"Failed to send infographic album to {user_id}: {e}")
 
 
 def get_all_user_ids():
