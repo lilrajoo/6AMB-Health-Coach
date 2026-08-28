@@ -87,8 +87,8 @@ def _build_evening_base_message(is_thursday):
             "Don't forget to log your dinner calories!\n"
             "Use /track to add them to today's total.\n\n"
             "⚖️ *It's Thursday — time for your weekly weigh-in!*\n"
-            "\nTake your weight at S1 branch tomorrow morning. Inform healthcoach if unable to attend with valid reason.\n"
-            "\nLog it with /updateweight afterward. 💪\n"
+            "Take your weight at S1 branch tomorrow morning. Inform healthcoach if unable to attend with valid reason.\n"
+            "\nLog it with /updateweight afterward. 💪"
         )
     return (
         "🍽️ *End of Day Check-in!*\n\n"
