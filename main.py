@@ -81,3 +81,28 @@ def test_infographics():
         return "Missing user_id", 400
     asyncio.run(send_exercise_infographics(int(test_user_id)))
     return "sent", 200
+
+@app.route("/test-full-evening", methods=["POST"])
+def test_full_evening():
+    from reminders import _build_evening_base_message, send_reminder, send_exercise_infographics
+    data = request.get_json(force=True) or {}
+    test_user_id = data.get("user_id")
+    force_thursday = data.get("thursday", False)
+    force_over_target = data.get("over_target", False)
+
+    if not test_user_id:
+        return "Missing user_id", 400
+
+    async def run():
+        msg = _build_evening_base_message(is_thursday=force_thursday)
+        if force_over_target:
+            msg += (
+                "\n\n🔥 *You're 350 kcal over your target today!*\n"
+                "Consider burning it off with some exercise. 👇"
+            )
+        await send_reminder(int(test_user_id), msg)
+        if force_over_target:
+            await send_exercise_infographics(int(test_user_id))
+
+    asyncio.run(run())
+    return "sent", 200
