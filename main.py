@@ -7,7 +7,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from handlers import (cmd_start, cmd_register, cmd_user, cmd_updateweight,
                       cmd_track, cmd_resettrack, cmd_caloriegraph,
                       cmd_weightgraph, cmd_unknown, handle_message)
-from reminders import cmd_subscribe, cmd_unsubscribe, fire_reminder_async, build_midday_message, fire_evening_reminder_async
+from reminders import fire_reminder_async, build_midday_message, fire_evening_reminder_async
 from handlers import cmd_help
 
 
