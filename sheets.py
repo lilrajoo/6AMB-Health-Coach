@@ -12,14 +12,20 @@ SHEETS_CREDS_RAW = os.environ.get("SHEETS_CREDENTIALS")
 SHEETS_ID        = os.environ.get("SHEETS_ID")
 
 
+_client_cache = None
+
 def get_sheets_client():
+    global _client_cache
+    if _client_cache is not None:
+        return _client_cache
     creds_dict = json.loads(SHEETS_CREDS_RAW)
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
     creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-    return gspread.authorize(creds)
+    _client_cache = gspread.authorize(creds)
+    return _client_cache
 
 
 def get_user_sheet(client, user_id):
@@ -42,10 +48,8 @@ def write_profile(worksheet, name, height, age, gender, weight, subscribed=False
 
 
 def append_data_row(worksheet, entry_type, value):
-    today      = datetime.now().strftime("%Y-%m-%d")
-    all_values = worksheet.get_all_values()
-    next_row   = max(len(all_values) + 1, 4)
-    worksheet.update(f"A{next_row}:C{next_row}", [[today, entry_type, value]])
+    today = datetime.now().strftime("%Y-%m-%d")
+    worksheet.append_row([today, entry_type, value])
 
 
 def read_data_rows(worksheet, entry_type):

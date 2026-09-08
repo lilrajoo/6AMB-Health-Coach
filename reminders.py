@@ -3,14 +3,14 @@ import asyncio
 import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from telegram.ext import Application
+from telegram import Bot
 from sheets import get_sheets_client, get_todays_calories
 from helpers import calc_tdee
-from telegram import InputMediaPhoto
 
 logger    = logging.getLogger(__name__)
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 SGT       = ZoneInfo("Asia/Singapore")
+bot = Bot(token=BOT_TOKEN)
 
 # Placeholder link for exercise infographic — fill this in when ready
 EXERCISE_IMAGES = [
@@ -53,10 +53,7 @@ def get_all_user_ids():
 async def send_reminder(user_id, message):
     # Sends a reminder message to a single user
     try:
-        application = Application.builder().token(BOT_TOKEN).build()
-        await application.bot.send_message(
-            chat_id=user_id, text=message, parse_mode="Markdown"
-        )
+        await bot.send_message(chat_id=user_id, text=message, parse_mode="Markdown")
         logger.info(f"Reminder sent to {user_id}")
     except Exception as e:
         logger.error(f"Reminder failed for {user_id}: {e}")
