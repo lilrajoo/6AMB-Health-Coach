@@ -19,23 +19,6 @@ BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 SHEETS_CREDS_RAW = os.environ.get("SHEETS_CREDENTIALS")
 SHEETS_ID        = os.environ.get("SHEETS_ID")
 
-# Build once at module load, not per-request
-telegram_app = Application.builder().token(BOT_TOKEN).build()
-telegram_app.add_handler(CommandHandler("start",        cmd_start))
-telegram_app.add_handler(CommandHandler("register",     cmd_register))
-telegram_app.add_handler(CommandHandler("user",         cmd_user))
-telegram_app.add_handler(CommandHandler("updateweight", cmd_updateweight))
-telegram_app.add_handler(CommandHandler("track",        cmd_track))
-telegram_app.add_handler(CommandHandler("resettrack",   cmd_resettrack))
-telegram_app.add_handler(CommandHandler("caloriegraph", cmd_caloriegraph))
-telegram_app.add_handler(CommandHandler("weightgraph",  cmd_weightgraph))
-telegram_app.add_handler(CommandHandler("help",         cmd_help))
-telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-telegram_app.add_handler(MessageHandler(filters.COMMAND, cmd_unknown))
-
-_initialized = False
-
-
 @app.route("/webhook", methods=["POST"])
 def webhook():
     if not BOT_TOKEN:
@@ -43,12 +26,21 @@ def webhook():
     data = request.get_json(force=True)
 
     async def process():
-        global _initialized
-        if not _initialized:
-            await telegram_app.initialize()
-            _initialized = True
-        update = Update.de_json(data, telegram_app.bot)
-        await telegram_app.process_update(update)
+        application = Application.builder().token(BOT_TOKEN).build()
+        application.add_handler(CommandHandler("start",        cmd_start))
+        application.add_handler(CommandHandler("register",     cmd_register))
+        application.add_handler(CommandHandler("user",         cmd_user))
+        application.add_handler(CommandHandler("updateweight", cmd_updateweight))
+        application.add_handler(CommandHandler("track",        cmd_track))
+        application.add_handler(CommandHandler("resettrack",   cmd_resettrack))
+        application.add_handler(CommandHandler("caloriegraph", cmd_caloriegraph))
+        application.add_handler(CommandHandler("weightgraph",  cmd_weightgraph))
+        application.add_handler(CommandHandler("help",         cmd_help))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        application.add_handler(MessageHandler(filters.COMMAND, cmd_unknown))
+        await application.initialize()
+        update = Update.de_json(data, application.bot)
+        await application.process_update(update)
 
     asyncio.run(process())
     return "ok", 200
