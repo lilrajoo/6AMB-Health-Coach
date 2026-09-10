@@ -1,7 +1,9 @@
 import logging
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from telegram import Update
 from telegram.ext import ContextTypes
-from state import user_state, user_name, user_height, user_weight, user_calories, user_age, user_gender
+from state import user_state, user_name, user_height, user_weight, user_calories, user_age, user_gender, user_calories_date
 from sheets import (get_sheets_client, get_user_sheet, write_profile,
                     append_data_row, read_data_rows,
                     get_todays_calories, delete_todays_calories)
@@ -9,6 +11,11 @@ from helpers import calc_bmi, calc_tdee, get_calorie_note
 from graphs import build_calorie_graph, build_weight_graph
 
 logger = logging.getLogger(__name__)
+
+SGT = ZoneInfo("Asia/Singapore")
+
+def today_sgt():
+    return datetime.now(SGT).strftime("%Y-%m-%d")
 
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -29,7 +36,6 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Same as /start — shows the full command list
     user_state[update.effective_user.id] = "idle"
     await update.message.reply_text(
         "👋 *Welcome to the 6AMB Health Coach Bot!*\n\n"
@@ -108,16 +114,19 @@ async def cmd_updateweight(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_track(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    today   = today_sgt()
 
-    # If no in-memory total, reload today's sum from sheet
-    if user_id not in user_calories:
+    # Reload from sheet if no in-memory total OR if the day has changed
+    if user_id not in user_calories or user_calories_date.get(user_id) != today:
         try:
             client    = get_sheets_client()
             worksheet = get_user_sheet(client, user_id)
             user_calories[user_id] = get_todays_calories(worksheet)
+            user_calories_date[user_id] = today
         except Exception as e:
             logger.error(f"Error reloading calories from sheet: {e}")
             user_calories[user_id] = 0
+            user_calories_date[user_id] = today
 
     total = user_calories.get(user_id, 0)
     user_state[user_id] = "awaiting_calories"
@@ -131,6 +140,7 @@ async def cmd_track(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_resettrack(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_calories[user_id] = 0
+    user_calories_date[user_id] = today_sgt()
     try:
         client    = get_sheets_client()
         worksheet = get_user_sheet(client, user_id)
@@ -328,8 +338,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif state == "awaiting_calories":
         try:
-            cal = float(text)
+            cal   = float(text)
             if cal < 0: raise ValueError
+            today = today_sgt()
+
+            # If the day changed since the total was cached, reload from sheet first
+            if user_calories_date.get(user_id) != today:
+                try:
+                    client    = get_sheets_client()
+                    worksheet = get_user_sheet(client, user_id)
+                    user_calories[user_id] = get_todays_calories(worksheet)
+                except Exception as e:
+                    logger.error(f"Error reloading calories before add: {e}")
+                    user_calories[user_id] = 0
+                user_calories_date[user_id] = today
+
             total = user_calories.get(user_id, 0) + cal
             user_calories[user_id] = total
             user_state[user_id]    = "idle"

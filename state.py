@@ -6,3 +6,4 @@ user_calories = {}
 user_age      = {}
 user_gender   = {}
 subscribed_users = set()
+user_calories_date = {}

@@ -4,6 +4,9 @@ import logging
 from datetime import datetime
 import gspread
 from google.oauth2.service_account import Credentials
+from zoneinfo import ZoneInfo
+
+SGT = ZoneInfo("Asia/Singapore")
 
 
 logger = logging.getLogger(__name__)
@@ -48,7 +51,7 @@ def write_profile(worksheet, name, height, age, gender, weight, subscribed=False
 
 
 def append_data_row(worksheet, entry_type, value):
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(SGT).strftime("%Y-%m-%d")
     worksheet.append_row([today, entry_type, value])
 
 
@@ -67,7 +70,7 @@ def read_data_rows(worksheet, entry_type):
 
 def get_todays_calories(worksheet):
     # Reads all calorie entries from today and returns the sum
-    today      = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(SGT).strftime("%Y-%m-%d")
     all_values = worksheet.get_all_values()
     total      = 0
     for row in all_values[3:]:
@@ -82,7 +85,7 @@ def get_todays_calories(worksheet):
 def delete_todays_calories(worksheet):
     # Deletes all calorie rows logged today from the sheet
     # Iterates in reverse so row indices don't shift during deletion
-    today      = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(SGT).strftime("%Y-%m-%d")
     all_values = worksheet.get_all_values()
     rows_to_delete = []
 
