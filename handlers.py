@@ -6,11 +6,68 @@ from telegram.ext import ContextTypes
 from state import user_state, user_name, user_height, user_weight, user_calories, user_age, user_gender, user_calories_date
 from sheets import (get_sheets_client, get_user_sheet, write_profile,
                     append_data_row, read_data_rows,
-                    get_todays_calories, delete_todays_calories)
+                    get_todays_calories, delete_todays_calories,
+                    write_state, read_state)
 from helpers import calc_bmi, calc_tdee, get_calorie_note
 from graphs import build_calorie_graph, build_weight_graph
 
 logger = logging.getLogger(__name__)
+
+PERSISTED_STATES = {"awaiting_update_weight", "awaiting_calories"}
+
+
+def load_profile(user_id):
+    # True if profile is in memory or successfully reloaded from the sheet
+    if user_name.get(user_id) and user_height.get(user_id) and user_age.get(user_id) and user_gender.get(user_id):
+        return True
+    try:
+        client    = get_sheets_client()
+        worksheet = get_user_sheet(client, user_id)
+        row       = worksheet.row_values(1)
+        # Unregistered tabs only have the "NAME" header — treat as no profile
+        if len(row) < 5 or not row[0] or row[0] == "NAME" or not row[1] or not row[2] or not row[3]:
+            return False
+        user_name[user_id]   = row[0]
+        user_height[user_id] = float(row[1])
+        user_age[user_id]    = int(row[2])
+        user_gender[user_id] = row[3]
+        weight_rows = read_data_rows(worksheet, "weight")
+        if weight_rows:
+            user_weight[user_id] = weight_rows[-1][1]
+        return True
+    except Exception as e:
+        logger.error(f"Profile reload error: {e}")
+        return False
+
+
+def set_state(user_id, state):
+    prev = user_state.get(user_id)
+    user_state[user_id] = state
+    # Only touch the Sheet when entering or leaving a persisted flow
+    if state in PERSISTED_STATES or prev in PERSISTED_STATES:
+        try:
+            client    = get_sheets_client()
+            worksheet = get_user_sheet(client, user_id)
+            write_state(worksheet, state)
+        except Exception as e:
+            logger.error(f"State write error: {e}")
+
+
+def get_state(user_id):
+    # Memory first; Sheet is only read after a restart
+    if user_id in user_state:
+        return user_state[user_id]
+    state = "idle"
+    try:
+        client    = get_sheets_client()
+        worksheet = get_user_sheet(client, user_id)
+        state     = read_state(worksheet)
+    except Exception as e:
+        logger.error(f"State read error: {e}")
+    if state not in PERSISTED_STATES:
+        state = "idle"
+    user_state[user_id] = state
+    return state
 
 SGT = ZoneInfo("Asia/Singapore")
 
@@ -19,7 +76,7 @@ def today_sgt():
 
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_state[update.effective_user.id] = "idle"
+    set_state(update.effective_user.id, "idle")
     await update.message.reply_text(
         "👋 *Welcome to the 6AMB Health Coach Bot!*\n\n"
         "Available commands:\n\n"
@@ -36,7 +93,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_state[update.effective_user.id] = "idle"
+    # Same as /start — shows the full command list
+    set_state(update.effective_user.id, "idle")
     await update.message.reply_text(
         "👋 *Welcome to the 6AMB Health Coach Bot!*\n\n"
         "Available commands:\n\n"
@@ -53,7 +111,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_register(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_state[update.effective_user.id] = "awaiting_name"
+    set_state(update.effective_user.id, "awaiting_name")
     await update.message.reply_text(
         "📝 *Registration started!*\n\nPlease enter your rank & full name:",
         parse_mode="Markdown"
@@ -103,17 +161,17 @@ async def cmd_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_updateweight(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    if not user_name.get(user_id):
+    if not load_profile(user_id):
         await update.message.reply_text("⚠️ No profile found. Please use /register first.")
         return
-    user_state[user_id] = "awaiting_update_weight"
+    set_state(user_id, "awaiting_update_weight")
     await update.message.reply_text(
         "⚖️ Enter your *new weight in kilograms* (e.g. 68):", parse_mode="Markdown"
     )
 
 
 async def cmd_track(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
+    set_state(user_id, "awaiting_calories")
     today   = today_sgt()
 
     # Reload from sheet if no in-memory total OR if the day has changed
@@ -220,7 +278,7 @@ async def cmd_unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text    = update.message.text.strip()
-    state   = user_state.get(user_id, "idle")
+    state   = get_state(user_id)
 
     if state == "awaiting_name":
         user_name[user_id]  = text
@@ -308,8 +366,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             w = float(text)
             if w < 10 or w > 500: raise ValueError
+            load_profile(user_id)
             user_weight[user_id] = w
-            user_state[user_id]  = "idle"
+            set_state(user_id, "idle")
             name   = user_name.get(user_id, "N/A")
             height = user_height.get(user_id)
             age    = user_age.get(user_id)
@@ -355,8 +414,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             total = user_calories.get(user_id, 0) + cal
             user_calories[user_id] = total
-            user_state[user_id]    = "idle"
-
+            set_state(user_id, "idle")
             try:
                 client    = get_sheets_client()
                 worksheet = get_user_sheet(client, user_id)

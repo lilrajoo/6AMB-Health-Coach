@@ -96,3 +96,13 @@ def delete_todays_calories(worksheet):
     # Delete in reverse order so indices remain valid
     for row_index in reversed(rows_to_delete):
         worksheet.delete_rows(row_index)
+
+def write_state(worksheet, state):
+    worksheet.update("A2:B2", [["STATE", state]])
+
+
+def read_state(worksheet):
+    vals = worksheet.get("A2:B2")
+    if vals and len(vals[0]) > 1 and vals[0][1]:
+        return vals[0][1]
+    return "idle"
